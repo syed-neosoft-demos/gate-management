@@ -1,0 +1,50 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: #0b0f14;
+  color: #e9eef3;
+}
+
+body {
+  background-image:
+    radial-gradient(
+      circle at 20% 15%,
+      rgba(82, 227, 194, 0.06),
+      transparent 40%
+    ),
+    radial-gradient(
+      circle at 80% 85%,
+      rgba(255, 145, 66, 0.05),
+      transparent 40%
+    ),
+    linear-gradient(#243140 1px, transparent 1px),
+    linear-gradient(90deg, #243140 1px, transparent 1px);
+  background-size:
+    auto,
+    auto,
+    42px 42px,
+    42px 42px;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: #243140;
+  border-radius: 8px;
+}
+
+video.mirrored {
+  transform: scaleX(-1);
+}
+canvas.mirrored {
+  transform: scaleX(-1);
+}
