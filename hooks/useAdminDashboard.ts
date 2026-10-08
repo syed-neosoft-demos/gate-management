@@ -98,7 +98,7 @@ export function useAdminDashboard(options: AdminOptions) {
   const resetAll = async () => {
     if (
       !confirm(
-        "This will permanently delete all registered people and attendance logs from this device. Continue?",
+        "This will permanently delete all registered people and attendance logs from the shared database for all kiosks. Continue?",
       ) ||
       !confirm("Are you absolutely sure? This cannot be undone.")
     ) {

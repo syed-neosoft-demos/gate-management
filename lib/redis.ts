@@ -8,21 +8,30 @@ const shared = globalThis as typeof globalThis & {
 };
 
 export async function getRedis(): Promise<RedisClient> {
-  if (!process.env.REDIS_URL) throw new Error("REDIS_URL is not configured");
+  const url = process.env.REDIS_URL?.trim();
+  if (!url) {
+    throw new Error("REDIS_URL is missing. Set it in .env.local and restart the Next.js server.");
+  }
   if (!shared.faceGateRedis) {
     shared.faceGateRedis = createClient({
-      url: process.env.REDIS_URL,
+      url,
       disableOfflineQueue: true,
       socket: { connectTimeout: 5000, reconnectStrategy: false },
+      password: process.env.REDIS_PASSWORD || undefined,
     });
-    shared.faceGateRedis.on("error", () => console.error("Redis connection error"));
+    shared.faceGateRedis.on("error", () =>
+      console.error("Redis connection error"),
+    );
   }
   const client = shared.faceGateRedis;
   if (client.isReady) return client;
   if (!shared.faceGateRedisConnection) {
-    shared.faceGateRedisConnection = client.connect().then(() => client).finally(() => {
-      shared.faceGateRedisConnection = undefined;
-    });
+    shared.faceGateRedisConnection = client
+      .connect()
+      .then(() => client)
+      .finally(() => {
+        shared.faceGateRedisConnection = undefined;
+      });
   }
   return shared.faceGateRedisConnection;
 }

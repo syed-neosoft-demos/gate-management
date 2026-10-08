@@ -28,7 +28,7 @@ export default function SettingsTab(p: KioskViewProps) {
       <div className="mt-8 pt-[22px] border-line border-t">
         <h2 className="opacity-90 text-danger text-xs uppercase tracking-[1.5px]">Danger zone</h2>
         <p className="mt-2 mb-3 text-[12.5px] text-ink-dim">
-          Permanently erase all registered people and attendance logs from this device. This cannot
+          Permanently erase all registered people and attendance logs from the shared database for all kiosks. This cannot
           be undone.
         </p>
         <button

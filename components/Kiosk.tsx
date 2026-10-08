@@ -197,7 +197,7 @@ export default function Kiosk() {
       } catch (error) {
         console.error(error);
         setLoadingText(
-          "Could not initialize the local database or face recognition models. Check your connection and reload.",
+          "Could not connect to Redis or load face recognition models. Check the server configuration and your connection, then reload.",
         );
       }
     }
