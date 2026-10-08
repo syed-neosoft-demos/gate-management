@@ -7,11 +7,20 @@ Employee records, face descriptors, photos, attendance, organization settings, a
 1. Copy `.env.example` to `.env.local` and configure `REDIS_URL` and `REDIS_PASSWORD` for your Redis server.
 2. Start Redis, for example with `docker compose up -d redis`. The included Docker service has no password; leave `REDIS_PASSWORD` empty for that service.
 3. Run `npm install`, then `npm run dev`.
-4. For a new installation, run `npm run admin:bootstrap`. This creates the `superadmin` account and prints a randomly generated temporary password once. Sign in at **`/admin/login`** and set a new password.
+4. Set the default admin credentials in `.env` or `.env.local`:
+
+   ```dotenv
+   DEFAULT_ADMIN_USERNAME=super-admin
+   DEFAULT_ADMIN_PASSWORD=Admin@Super@123
+   ```
+
+   Starting the development or production server automatically creates this username in Redis with the `superadmin` role, a salted password hash, and a first-sign-in password change requirement. Sign in at **`/admin/login`** using these credentials. An existing account is preserved: restarting or changing the environment password does not reset its password, role, or sessions. An existing non-super-admin account with that username causes an explicit configuration error.
+
+   Startup uses the Next.js instrumentation hook and skips database seeding during `next build`. If neither default admin variable is configured, automatic seeding is skipped; `npm run admin:bootstrap` remains available for manual setup.
 
 If the previous admin PIN already exists in Redis settings, the app migrates it into the `superadmin` account automatically. Use username `superadmin` and your previous PIN for the first sign-in, then set a password with at least 10 characters. Public settings no longer expose the PIN. There is no hardcoded default admin password.
 
-For operator recovery, `npm run admin:bootstrap -- --reset` explicitly resets the superadmin password and invalidates its sessions. It prints a new temporary password and records the recovery in the audit log. Without `--reset`, the script preserves an existing account.
+For operator recovery, `npm run admin:bootstrap -- --reset` explicitly resets the configured `DEFAULT_ADMIN_USERNAME` account password (or `superadmin` when the variable is absent) and invalidates its sessions. It prints a new temporary password and records the recovery in the audit log. Without `--reset`, the script preserves an existing account.
 
 ## Pages and project structure
 
@@ -78,7 +87,7 @@ The employee kiosk at `/` only scans registered employees to check them in or ou
 
 Use Redis with persistence enabled. The Docker service enables append-only persistence in a named volume. `docker compose down` stops it; adding `-v` deletes its data.
 
-Existing `fg_*` browser data and the old `facegate` IndexedDB database import after an admin signs in. They are not imported from the public kiosk. Existing Redis rows take precedence; originals are retained if the import fails. Close other FaceGate tabs during migration. Legacy browser PIN values do not create or overwrite admin credentials; bootstrap the superadmin account if Redis had no existing admin PIN.
+Existing `fg_*` browser data and the old `facegate` IndexedDB database import after an admin signs in. They are not imported from the public kiosk. Existing Redis rows take precedence; originals are retained if the import fails. Close other FaceGate tabs during migration. Legacy browser PIN values do not create or overwrite admin credentials; configure the startup default super admin if Redis had no existing admin PIN.
 
 Erasing attendance and people deletes those records and photos for every kiosk. Organization settings, admin accounts, and access logs are retained.
 
