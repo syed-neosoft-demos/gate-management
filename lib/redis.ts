@@ -10,7 +10,9 @@ const shared = globalThis as typeof globalThis & {
 export async function getRedis(): Promise<RedisClient> {
   const url = process.env.REDIS_URL?.trim();
   if (!url) {
-    throw new Error("REDIS_URL is missing. Set it in .env.local and restart the Next.js server.");
+    throw new Error(
+      "REDIS_URL is missing. Set it in .env.local and restart the Next.js server.",
+    );
   }
   if (!shared.faceGateRedis) {
     shared.faceGateRedis = createClient({
