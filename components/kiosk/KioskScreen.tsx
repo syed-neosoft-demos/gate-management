@@ -1,8 +1,9 @@
+import Link from "next/link";
 import { fmtTime } from "@/lib/types";
-import { KioskViewProps } from "@/components/kiosk/types";
-import { badgeClass, EmployeeAvatar } from "@/components/kiosk/ui";
+import { KioskScreenProps } from "@/components/kiosk/types";
+import { badgeClass, EmployeeAvatar } from "@/components/shared/ui";
 
-export default function KioskMain(p: KioskViewProps) {
+export default function KioskScreen(p: KioskScreenProps) {
   return (
     <>
       {p.loadingScreenVisible && <LoadingScreen text={p.loadingText} />}
@@ -32,13 +33,14 @@ export default function KioskMain(p: KioskViewProps) {
                 {p.clockDate}
               </div>
             </div>
-            <button
-              onClick={p.openPinGate}
-              title="Admin"
+            <Link
+              href="/admin"
+              aria-label="Open admin dashboard"
+              title="Admin dashboard"
               className="flex justify-center items-center bg-panel ml-4 border border-line hover:border-scan rounded-[10px] w-[38px] h-[38px] text-ink-dim hover:text-ink transition-all"
             >
               ⚙
-            </button>
+            </Link>
           </div>
         </header>
 
@@ -60,7 +62,7 @@ function LoadingScreen({ text }: { text: string }) {
   );
 }
 
-function AttendanceToast(p: KioskViewProps) {
+function AttendanceToast(p: KioskScreenProps) {
   return (
     <div
       className={`fixed left-1/2 top-6 z-[100] flex min-w-[300px] -translate-x-1/2 items-center gap-3.5 rounded-2xl border border-line bg-panel px-[22px] py-4 shadow-[0_20px_50px_rgba(0,0,0,0.5)] transition-transform duration-[350ms] ${
@@ -68,7 +70,11 @@ function AttendanceToast(p: KioskViewProps) {
       }`}
       style={{ transitionTimingFunction: "cubic-bezier(0.2,0.9,0.3,1.3)" }}
     >
-      <EmployeeAvatar photo={p.toast.emp?.photo} sizeClass="w-11 h-11" bordered />
+      <EmployeeAvatar
+        photo={p.toast.emp?.photo}
+        sizeClass="w-11 h-11"
+        bordered
+      />
       <div>
         <div className="font-bold text-[15px]">{p.toast.emp?.name || "—"}</div>
         <div className="mt-0.5 text-ink-dim text-xs">
@@ -88,7 +94,7 @@ function AttendanceToast(p: KioskViewProps) {
   );
 }
 
-function Scanner(p: KioskViewProps) {
+function Scanner(p: KioskScreenProps) {
   return (
     <div className="relative flex-shrink-0 w-[320px] md:w-[440px] h-[320px] md:h-[440px]">
       <div
@@ -102,7 +108,10 @@ function Scanner(p: KioskViewProps) {
           playsInline
           className="w-full h-full object-cover mirrored"
         />
-        <canvas ref={p.overlayRef} className="absolute inset-0 w-full h-full mirrored" />
+        <canvas
+          ref={p.overlayRef}
+          className="absolute inset-0 w-full h-full mirrored"
+        />
         <div className="right-3.5 left-3.5 absolute bg-gradient-to-r from-transparent via-scan to-transparent opacity-80 h-0.5 animate-sweep" />
         {(["tl", "tr", "bl", "br"] as const).map((corner) => (
           <div key={corner} className={cornerClass(corner, p.scanMatch)} />
@@ -115,12 +124,12 @@ function Scanner(p: KioskViewProps) {
   );
 }
 
-function Summary(p: KioskViewProps) {
+function Summary(p: KioskScreenProps) {
   return (
     <div className="flex-shrink-0 w-full md:w-[340px] max-w-[400px]">
       <div className="bg-panel p-[22px] border border-line rounded-card">
         <h2 className="mb-3.5 text-ink-dim text-xs uppercase tracking-[1.5px]">
-          Last check-in
+          Last attendance event
         </h2>
         {p.lastEvent ? (
           <div className="flex items-center gap-3.5">
@@ -130,7 +139,9 @@ function Summary(p: KioskViewProps) {
               bordered
             />
             <div>
-              <div className="font-semibold text-[15px]">{p.lastEvent.emp.name}</div>
+              <div className="font-semibold text-[15px]">
+                {p.lastEvent.emp.name}
+              </div>
               <div className="mt-0.5 text-ink-dim text-xs">
                 {p.lastEvent.emp.extId}
                 {p.lastEvent.emp.dept ? ` · ${p.lastEvent.emp.dept}` : ""}
@@ -138,37 +149,44 @@ function Summary(p: KioskViewProps) {
               <span
                 className={`mt-1.5 inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold tracking-wide ${badgeClass(p.lastEvent.entry.type)}`}
               >
-                {p.lastEvent.entry.type === "IN" ? "CHECKED IN" : "CHECKED OUT"} ·{" "}
-                {fmtTime(p.lastEvent.entry.ts)}
+                {p.lastEvent.entry.type === "IN" ? "CHECKED IN" : "CHECKED OUT"}{" "}
+                · {fmtTime(p.lastEvent.entry.ts)}
               </span>
             </div>
           </div>
         ) : (
           <div className="text-[13px] text-ink-dim leading-relaxed">
-            No one has checked in yet today. Once someone scans in, their details will appear here.
+            No one has checked in yet today. Once someone scans in, their
+            details will appear here.
           </div>
         )}
       </div>
 
       <div className="bg-panel mt-4 p-[22px] border border-line rounded-card">
-        <h2 className="mb-3.5 text-ink-dim text-xs uppercase tracking-[1.5px]">Today</h2>
+        <h2 className="mb-3.5 text-ink-dim text-xs uppercase tracking-[1.5px]">
+          Today
+        </h2>
         <StatRow label="Checked in" value={p.statIn} />
         <StatRow label="Checked out" value={p.statOut} />
         <StatRow label="Registered people" value={p.statPeople} last />
-        <div className="mt-3.5 text-center">
-          <button
-            onClick={p.openRegister}
-            className="bg-transparent font-inherit text-[13px] text-scan underline cursor-pointer"
-          >
-            + Register a new person
-          </button>
-        </div>
+        <p className="mt-3.5 text-xs text-ink-dim text-center">
+          Look at the camera to check in or check out. An administrator must
+          register you first.
+        </p>
       </div>
     </div>
   );
 }
 
-function StatRow({ label, value, last }: { label: string; value: number; last?: boolean }) {
+function StatRow({
+  label,
+  value,
+  last,
+}: {
+  label: string;
+  value: number;
+  last?: boolean;
+}) {
   return (
     <div
       className={`flex items-baseline justify-between py-1.5 ${

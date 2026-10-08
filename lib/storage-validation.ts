@@ -26,7 +26,18 @@ export function isLogEntry(value: unknown): value is LogEntry {
     (value.type === "IN" || value.type === "OUT") && timestamp(value.ts);
 }
 
+export function isTimeZone(value: unknown): value is string {
+  if (!text(value, 100)) return false;
+  try { new Intl.DateTimeFormat("en", { timeZone: value }); return true; } catch { return false; }
+}
+
 export function isSettings(value: unknown): value is Settings {
-  return record(value) && text(value.pin) && /^\d{4}$/.test(value.pin) &&
-    text(value.orgName) && value.orgName.trim().length > 0;
+  return record(value) && text(value.orgName) && value.orgName.trim().length > 0 &&
+    isTimeZone(value.timeZone);
+}
+
+export function isLegacySettings(value: unknown): value is { orgName: string; pin?: string; timeZone?: string } {
+  return record(value) && text(value.orgName) && value.orgName.trim().length > 0 &&
+    (value.pin === undefined || (text(value.pin) && /^\d{4}$/.test(value.pin))) &&
+    (value.timeZone === undefined || isTimeZone(value.timeZone));
 }

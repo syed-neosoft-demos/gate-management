@@ -36,9 +36,14 @@ export async function getRedis(): Promise<RedisClient> {
   return shared.faceGateRedisConnection;
 }
 
+const prefix = process.env.FACEGATE_REDIS_PREFIX || "facegate";
 export const redisKeys = {
-  employees: "facegate:employees",
-  attendance: "facegate:attendance",
-  settings: "facegate:settings",
-  images: "facegate:images",
+  employees: `${prefix}:employees`,
+  attendance: `${prefix}:attendance`,
+  settings: `${prefix}:settings`,
+  images: `${prefix}:images`,
+  admins: `${prefix}:admins`,
+  audit: `${prefix}:admin:audit`,
+  sessionPrefix: `${prefix}:admin:session:`,
+  ratePrefix: `${prefix}:admin:attempts:`,
 };

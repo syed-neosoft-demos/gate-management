@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 
-const Kiosk = dynamic(() => import("@/components/Kiosk"), {
+const Kiosk = dynamic(() => import("@/components/kiosk/Kiosk"), {
   ssr: false,
   loading: () => (
     <div className="z-[200] fixed inset-0 flex flex-col justify-center items-center gap-4 bg-bg">

@@ -5,12 +5,19 @@ import {
   isImage,
   isLogEntry,
   isSettings,
+  isLegacySettings,
 } from "@/lib/storage-validation";
+import {
+  AdminError,
+  audit,
+  migrateLegacyAdmin,
+  requireAdmin,
+} from "@/lib/admin-auth";
 import { Employee, LogEntry, Settings } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-const defaults: Settings = { pin: "1234", orgName: "FaceGate" };
+const defaults: Settings = { orgName: "FaceGate", timeZone: "Asia/Kolkata" };
 type Context = { params: { resource: string } };
 const json = (value: unknown, status = 200) =>
   NextResponse.json(value, {
@@ -45,6 +52,8 @@ async function handle(request: NextRequest, { params }: Context) {
     if (request.method === "GET") {
       if (resource === "initialize") {
         await redis.ping();
+        await migrateLegacyAdmin();
+        await redis.set(keys.settings, JSON.stringify(defaults), { NX: true });
         return json({ ok: true });
       }
       if (resource === "employees") {
@@ -69,8 +78,13 @@ async function handle(request: NextRequest, { params }: Context) {
           ),
         );
       if (resource === "settings") {
+        await migrateLegacyAdmin();
         const value = await redis.get(keys.settings);
-        return json(value ? JSON.parse(value) : defaults);
+        const saved = value ? JSON.parse(value) : defaults;
+        return json({
+          orgName: saved.orgName || defaults.orgName,
+          timeZone: saved.timeZone || defaults.timeZone,
+        });
       }
       if (resource === "images" && key)
         return json((await redis.hGet(keys.images, key)) ?? null);
@@ -78,18 +92,23 @@ async function handle(request: NextRequest, { params }: Context) {
     }
     if (request.method === "DELETE") {
       if (resource === "reset") {
+        const actor = await requireAdmin(request, "superadmin");
         await redis.del([keys.employees, keys.attendance, keys.images]);
+        await audit(request, actor, "data_reset");
         return json({ ok: true });
       }
       if (resource === "employees" && key) {
+        const actor = await requireAdmin(request);
         await redis
           .multi()
           .hDel(keys.employees, key)
           .hDel(keys.images, `employees/${key}/profile`)
           .exec();
+        await audit(request, actor, "employee_removed", key);
         return json({ ok: true });
       }
       if (resource === "images" && key) {
+        await requireAdmin(request);
         await redis.hDel(keys.images, key);
         return json({ ok: true });
       }
@@ -102,6 +121,7 @@ async function handle(request: NextRequest, { params }: Context) {
       return invalid();
     }
     if (resource === "employees" && isEmployee(body)) {
+      const actor = await requireAdmin(request);
       const { photo, photoKey: _oldKey, ...data } = body;
       const photoKey = photo ? `employees/${body.id}/profile` : undefined;
       const row = { ...data, photoKey };
@@ -116,39 +136,76 @@ async function handle(request: NextRequest, { params }: Context) {
         },
       );
       if (!created) return json({ error: "Employee already exists" }, 409);
+      await audit(request, actor, "employee_registered", body.id);
       return json({ ...row, photo }, 201);
     }
     if (resource === "attendance" && isLogEntry(body)) {
-      if (
-        !(await redis.hSetNX(keys.attendance, body.id, JSON.stringify(body)))
-      ) {
+      // Only registered employees can record attendance; identity labels come from Redis.
+      const saved = await redis.eval(
+        `local person = redis.call('HGET', KEYS[1], ARGV[1])
+         if not person then return -1 end
+         if redis.call('HEXISTS', KEYS[2], ARGV[2]) == 1 then return 0 end
+         local employee = cjson.decode(person)
+         local entry = cjson.decode(ARGV[3])
+         entry.name = employee.name
+         entry.extId = employee.extId
+         local value = cjson.encode(entry)
+         redis.call('HSET', KEYS[2], ARGV[2], value)
+         return value`,
+        {
+          keys: [keys.employees, keys.attendance],
+          arguments: [
+            body.empId,
+            body.id,
+            JSON.stringify({
+              id: body.id,
+              empId: body.empId,
+              type: body.type,
+              ts: body.ts,
+            }),
+          ],
+        },
+      );
+      if (saved === -1)
+        return json(
+          {
+            error:
+              "Employee is not registered. Ask an administrator to register them.",
+          },
+          404,
+        );
+      if (saved === 0)
         return json({ error: "Attendance entry already exists" }, 409);
-      }
-      return json({ ok: true }, 201);
+      return json(JSON.parse(String(saved)), 201);
     }
     if (resource === "settings" && isSettings(body)) {
+      const actor = await requireAdmin(request, "superadmin");
       await redis.set(
         keys.settings,
-        JSON.stringify({ pin: body.pin, orgName: body.orgName }),
+        JSON.stringify({ orgName: body.orgName, timeZone: body.timeZone }),
       );
+      await audit(request, actor, "settings_updated");
       return json({ ok: true });
     }
     if (resource === "images" && key && isImage(body)) {
+      await requireAdmin(request);
       await redis.hSet(keys.images, key, body);
       return json({ ok: true });
     }
     if (resource === "migrate" && typeof body === "object" && body !== null) {
+      const actor = await requireAdmin(request);
       const snapshot = body as {
         employees: Employee[];
         logs: LogEntry[];
-        settings?: Settings;
+        settings?: { orgName: string; pin?: string; timeZone?: string };
       };
       if (
         !Array.isArray(snapshot.employees) ||
         !snapshot.employees.every(isEmployee) ||
         !Array.isArray(snapshot.logs) ||
         !snapshot.logs.every(isLogEntry) ||
-        (snapshot.settings !== undefined && !isSettings(snapshot.settings))
+        (snapshot.settings !== undefined &&
+          !isLegacySettings(snapshot.settings))
       )
         return invalid();
       const transaction = redis.multi();
@@ -165,14 +222,24 @@ async function handle(request: NextRequest, { params }: Context) {
       for (const entry of snapshot.logs)
         transaction.hSetNX(keys.attendance, entry.id, JSON.stringify(entry));
       if (snapshot.settings)
-        transaction.set(keys.settings, JSON.stringify(snapshot.settings), {
-          NX: true,
-        });
+        transaction.set(
+          keys.settings,
+          JSON.stringify({
+            orgName: snapshot.settings.orgName,
+            timeZone: snapshot.settings.timeZone || defaults.timeZone,
+          }),
+          {
+            NX: true,
+          },
+        );
       await transaction.exec();
+      await audit(request, actor, "legacy_data_imported");
       return json({ ok: true });
     }
     return invalid();
-  } catch {
+  } catch (error) {
+    if (error instanceof AdminError)
+      return json({ error: error.message }, error.status);
     console.error("Redis storage request failed");
     return json(
       {

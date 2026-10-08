@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node --test tests/*.test.cjs"
+    "test": "node --test tests/*.test.cjs",
+    "admin:bootstrap": "node scripts/bootstrap-admin.cjs"
   },
   "dependencies": {
     "face-api.js": "^0.22.2",

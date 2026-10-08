@@ -1,3 +1,4 @@
+import { attendanceDate } from "@/lib/attendance-report";
 import { Employee, LogEntry, LogType, isoDate } from "@/lib/types";
 
 export function averageDescriptors(samples: Float32Array[]): number[] {
@@ -11,7 +12,10 @@ export function averageDescriptors(samples: Float32Array[]): number[] {
   return average;
 }
 
-export function nextAttendanceType(logs: LogEntry[], employeeId: string): LogType {
+export function nextAttendanceType(
+  logs: LogEntry[],
+  employeeId: string,
+): LogType {
   const latest = logs
     .filter((entry) => entry.empId === employeeId)
     .sort((a, b) => b.ts - a.ts)[0];
@@ -36,28 +40,38 @@ export function sortEmployees(employees: Employee[]): Employee[] {
   return employees.slice().sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export function createAttendanceCsv(logs: LogEntry[]): string {
+export function createAttendanceCsv(
+  logs: LogEntry[],
+  timeZone?: string,
+): string {
   const rows = [
     ["Name", "ID", "Type", "Date", "Time", "Timestamp"],
     ...logs.map((entry) => [
       entry.name,
       entry.extId || "",
       entry.type,
-      isoDate(entry.ts),
+      timeZone ? attendanceDate(entry.ts, timeZone) : isoDate(entry.ts),
       new Date(entry.ts).toLocaleTimeString([], {
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
+        timeZone,
       }),
       new Date(entry.ts).toISOString(),
     ]),
   ];
   return rows
-    .map((row) => row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","))
+    .map((row) =>
+      row.map((value) => `"${String(value).replace(/"/g, '""')}"`).join(","),
+    )
     .join("\n");
 }
 
-export function downloadTextFile(contents: string, filename: string, type: string) {
+export function downloadTextFile(
+  contents: string,
+  filename: string,
+  type: string,
+) {
   const url = URL.createObjectURL(new Blob([contents], { type }));
   const anchor = document.createElement("a");
   anchor.href = url;

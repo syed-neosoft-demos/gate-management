@@ -1,148 +1,205 @@
-import { Dispatch, MutableRefObject, SetStateAction, useState } from "react";
-import { Employee, LogEntry, Settings, isoDate } from "@/lib/types";
+import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Employee, LogEntry, Settings } from "@/lib/types";
+import { AdminUser } from "@/lib/admin-types";
+import { adminRequest, AdminRequestError } from "@/lib/admin-client";
+import { AdminDashboardProps } from "@/components/admin/types";
 import {
   createAttendanceCsv,
   downloadTextFile,
-  filterLogs,
   sortEmployees,
 } from "@/lib/kiosk-utils";
+import { attendanceDate } from "@/lib/attendance-report";
 import { faceGateStorage } from "@/lib/storage";
 
-interface AdminOptions {
-  employees: Employee[];
-  logs: LogEntry[];
-  settings: Settings;
-  setEmployees: Dispatch<SetStateAction<Employee[]>>;
-  setLogs: Dispatch<SetStateAction<LogEntry[]>>;
-  setSettings: Dispatch<SetStateAction<Settings>>;
-  clearLastEvent: () => void;
-  scanPausedRef: MutableRefObject<boolean>;
-}
-
-export function useAdminDashboard(options: AdminOptions) {
-  const {
-    employees,
-    logs,
-    settings,
-    setEmployees,
-    setLogs,
-    setSettings,
-    clearLastEvent,
-    scanPausedRef,
-  } = options;
-  const [adminOpen, setAdminOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"logs" | "people" | "settings">("logs");
-  const [logDate, setLogDateValue] = useState(isoDate(Date.now()));
+export function useAdminDashboard(initialUser: AdminUser): AdminDashboardProps {
+  const router = useRouter();
+  const [user, setUser] = useState(initialUser);
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [settings, setSettings] = useState<Settings>({
+    orgName: "FaceGate",
+    timeZone: "Asia/Kolkata",
+  });
+  const [reportMonth, setReportMonth] = useState(
+    attendanceDate(Date.now(), settings.timeZone).slice(0, 7),
+  );
+  const [reportEmployeeId, setReportEmployeeId] = useState("all");
+  const [logDate, setLogDateValue] = useState(
+    attendanceDate(Date.now(), settings.timeZone),
+  );
   const [filterDate, setFilterDate] = useState<string | undefined>(logDate);
   const [organizationName, setOrganizationName] = useState("");
-  const [newPin, setNewPin] = useState("");
+  const [timeZone, setTimeZone] = useState(settings.timeZone);
   const [message, setMessage] = useState({ text: "", ok: false });
+  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshError, setRefreshError] = useState("");
 
-  const open = () => {
-    scanPausedRef.current = true;
-    setOrganizationName(settings.orgName || "");
-    setActiveTab("logs");
-    setAdminOpen(true);
+  const refresh = useCallback(async () => {
+    setRefreshing(true);
+    setRefreshError("");
+    try {
+      const session = await adminRequest<{ user: AdminUser }>("session");
+      if (session.user.mustChangePassword) {
+        router.replace("/admin/login");
+        router.refresh();
+        return;
+      }
+      setUser(session.user);
+      await faceGateStorage.initialize();
+      try {
+        await faceGateStorage.migrateLegacyData();
+      } catch (error) {
+        setRefreshError(
+          `Could not import older browser data: ${error instanceof Error ? error.message : "Please retry."}`,
+        );
+      }
+      const [storedEmployees, storedLogs, storedSettings] = await Promise.all([
+        faceGateStorage.employees.list(),
+        faceGateStorage.attendance.list(),
+        faceGateStorage.settings.get(),
+      ]);
+      setEmployees(storedEmployees);
+      setLogs(storedLogs);
+      setSettings(storedSettings);
+      setOrganizationName(storedSettings.orgName);
+      setTimeZone(storedSettings.timeZone);
+    } catch (error) {
+      if (error instanceof AdminRequestError && error.status === 401) {
+        router.replace("/admin/login");
+        router.refresh();
+      } else
+        setRefreshError(
+          error instanceof Error ? error.message : "Could not refresh reports.",
+        );
+    } finally {
+      setRefreshing(false);
+      setLoading(false);
+    }
+  }, [router]);
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
+  const signOut = async () => {
+    try {
+      await adminRequest("logout", {});
+      router.replace("/admin/login");
+      router.refresh();
+    } catch (error) {
+      setRefreshError(
+        error instanceof Error ? error.message : "Could not sign out.",
+      );
+    }
   };
-
-  const close = () => {
-    setAdminOpen(false);
-    scanPausedRef.current = false;
-  };
-
   const setLogDate = (value: string) => {
     setLogDateValue(value);
     setFilterDate(value);
   };
-
   const removePerson = async (employee: Employee) => {
     if (
       !confirm(
-        `Remove ${employee.name}? Their past attendance logs will be kept, but they'll need to re-register to check in again.`,
+        `Remove ${employee.name}? Past attendance will be kept. They must be registered again by an administrator.`,
       )
-    ) {
+    )
       return;
-    }
     try {
       await faceGateStorage.employees.remove(employee.id);
-      setEmployees((current) => current.filter((item) => item.id !== employee.id));
+      setEmployees((current) =>
+        current.filter((item) => item.id !== employee.id),
+      );
     } catch (error) {
-      console.error("Could not remove employee", error);
-      alert("Could not remove this person. Please try again.");
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Could not remove this person.",
+      );
     }
   };
-
   const saveSettings = async () => {
-    const orgName = organizationName.trim();
-    const pin = newPin.trim();
-    if (pin && !/^\d{4}$/.test(pin)) {
-      setMessage({ text: "PIN must be exactly 4 digits.", ok: false });
-      return;
-    }
     const nextSettings = {
-      pin: pin || settings.pin,
-      orgName: orgName || settings.orgName,
+      orgName: organizationName.trim() || settings.orgName,
+      timeZone: timeZone.trim(),
     };
     try {
       await faceGateStorage.settings.save(nextSettings);
       setSettings(nextSettings);
       setMessage({ text: "Settings saved.", ok: true });
-      setNewPin("");
-      setTimeout(() => setMessage({ text: "", ok: false }), 2200);
     } catch (error) {
-      console.error("Could not save settings", error);
-      setMessage({ text: "Could not save settings. Please try again.", ok: false });
+      setMessage({
+        text:
+          error instanceof Error ? error.message : "Could not save settings.",
+        ok: false,
+      });
     }
   };
-
   const resetAll = async () => {
     if (
       !confirm(
-        "This will permanently delete all registered people and attendance logs from the shared database for all kiosks. Continue?",
+        "Permanently delete all registered people, photos and attendance logs for every kiosk? Admin accounts and access logs will be retained.",
       ) ||
-      !confirm("Are you absolutely sure? This cannot be undone.")
-    ) {
+      !confirm("This cannot be undone. Continue?")
+    )
       return;
-    }
     try {
       await faceGateStorage.clearPeopleAndAttendance();
       setEmployees([]);
       setLogs([]);
-      clearLastEvent();
     } catch (error) {
-      console.error("Could not erase kiosk data", error);
-      alert("Could not erase the data. Please try again.");
+      alert(error instanceof Error ? error.message : "Could not erase data.");
     }
   };
-
-  const visibleLogs = filterLogs(logs, filterDate);
-  const exportCsv = () => {
-    downloadTextFile(
-      createAttendanceCsv(visibleLogs),
-      `attendance_${filterDate || "all"}.csv`,
-      "text/csv",
-    );
-  };
-
+  const visibleLogs = logs
+    .filter(
+      (entry) =>
+        !filterDate ||
+        attendanceDate(entry.ts, settings.timeZone) === filterDate,
+    )
+    .slice()
+    .sort((a, b) => b.ts - a.ts);
   return {
-    adminOpen,
-    activeTab,
-    setActiveTab,
+    adminUser: user,
+    setAdminUser: setUser,
+    employees,
+    logs,
+    sortedPeople: sortEmployees(employees),
+    addEmployee: (employee) =>
+      setEmployees((current) => [
+        ...current.filter((item) => item.id !== employee.id),
+        employee,
+      ]),
+    openEmployeeReport: (id) => {
+      setReportEmployeeId(id);
+      router.push("/admin/attendance");
+    },
+    reportMonth,
+    setReportMonth,
+    reportEmployeeId,
+    setReportEmployeeId,
+    reportTimeZone: settings.timeZone,
     logDate,
     setLogDate,
     showAllDates: () => setFilterDate(undefined),
     filteredLogs: visibleLogs,
-    sortedPeople: sortEmployees(employees),
-    organizationName,
-    setOrganizationName,
-    newPin,
-    setNewPin,
-    message,
-    open,
-    close,
+    settingsOrgName: organizationName,
+    setSettingsOrgName: setOrganizationName,
+    settingsTimeZone: timeZone,
+    setSettingsTimeZone: setTimeZone,
+    settingsMsg: message,
     removePerson,
     saveSettings,
     resetAll,
-    exportCsv,
+    refreshAdmin: refresh,
+    adminRefreshing: refreshing,
+    adminLoading: loading,
+    adminRefreshError: refreshError,
+    signOut,
+    exportCsv: () =>
+      downloadTextFile(
+        createAttendanceCsv(visibleLogs, settings.timeZone),
+        `attendance_${filterDate || "all"}.csv`,
+        "text/csv",
+      ),
   };
 }

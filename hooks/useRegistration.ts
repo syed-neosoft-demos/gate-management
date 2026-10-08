@@ -1,26 +1,22 @@
-import { Dispatch, MutableRefObject, SetStateAction, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import * as faceapi from "face-api.js";
 import { Employee, uid } from "@/lib/types";
 import { averageDescriptors } from "@/lib/kiosk-utils";
+import { loadFaceModels } from "@/lib/face-models";
 import { dataUrlToBlob, faceGateStorage } from "@/lib/storage";
 
 const INITIAL_HINT =
-  "Look straight at the camera, then capture 3 samples (turn slightly between each for better accuracy).";
-
-interface RegistrationOptions {
-  modelsReadyRef: MutableRefObject<boolean>;
-  scanPausedRef: MutableRefObject<boolean>;
-  setEmployees: Dispatch<SetStateAction<Employee[]>>;
-}
-
-export function useRegistration({
-  modelsReadyRef,
-  scanPausedRef,
-  setEmployees,
-}: RegistrationOptions) {
-  const [registerOpen, setRegisterOpen] = useState(false);
+  "Look straight at the camera and capture 3 samples. Turn slightly between samples.";
+export function useRegistration(onRegistered: (employee: Employee) => void) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const cameraAttemptRef = useRef(0);
+  const operationRef = useRef(false);
+  const mountedRef = useRef(false);
+  const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
   const [samples, setSamples] = useState<Float32Array[]>([]);
   const [samplePhoto, setSamplePhoto] = useState<string | null>(null);
   const [captureHint, setCaptureHint] = useState(INITIAL_HINT);
@@ -29,59 +25,97 @@ export function useRegistration({
   const [department, setDepartment] = useState("");
   const [error, setError] = useState({ text: "", ok: false });
 
-  const open = async () => {
-    scanPausedRef.current = true;
-    setSamples([]);
-    setSamplePhoto(null);
-    setName("");
-    setEmployeeId("");
-    setDepartment("");
+  const initialize = useCallback(async () => {
+    const attempt = ++cameraAttemptRef.current;
+    const current = () =>
+      mountedRef.current && cameraAttemptRef.current === attempt;
+    setLoading(true);
+    setReady(false);
     setError({ text: "", ok: false });
-    setCaptureHint(INITIAL_HINT);
-    setRegisterOpen(true);
+    streamRef.current?.getTracks().forEach((track) => track.stop());
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { width: 400, height: 400 },
       });
+      if (!current()) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
       streamRef.current = stream;
       if (videoRef.current) videoRef.current.srcObject = stream;
+      await loadFaceModels();
+      if (current()) {
+        setReady(true);
+        setCaptureHint(INITIAL_HINT);
+      }
     } catch {
-      setCaptureHint("Camera access denied. Allow camera permission to register.");
+      if (current())
+        setError({
+          text: "Could not start registration. Allow camera access and check your connection, then retry.",
+          ok: false,
+        });
+    } finally {
+      if (current()) setLoading(false);
     }
-  };
-
-  const close = () => {
-    setRegisterOpen(false);
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    streamRef.current = null;
-    scanPausedRef.current = false;
-  };
+  }, []);
+  useEffect(() => {
+    mountedRef.current = true;
+    void initialize();
+    return () => {
+      mountedRef.current = false;
+      cameraAttemptRef.current++;
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, [initialize]);
 
   const capture = async () => {
-    if (!modelsReadyRef.current || !videoRef.current || samples.length >= 3) return;
-    setCaptureHint("Capturing…");
-    const detection = await faceapi
-      .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions({ inputSize: 224 }))
-      .withFaceLandmarks()
-      .withFaceDescriptor();
-    if (!detection) {
-      setCaptureHint("No face detected — center your face in the frame and try again.");
+    if (
+      !ready ||
+      !videoRef.current ||
+      samples.length >= 3 ||
+      operationRef.current ||
+      saved
+    )
       return;
+    operationRef.current = true;
+    setBusy(true);
+    setCaptureHint("Capturing…");
+    try {
+      const detection = await faceapi
+        .detectSingleFace(
+          videoRef.current,
+          new faceapi.TinyFaceDetectorOptions({ inputSize: 224 }),
+        )
+        .withFaceLandmarks()
+        .withFaceDescriptor();
+      if (!mountedRef.current) return;
+      if (!detection) {
+        setCaptureHint("No face detected. Center your face and try again.");
+        return;
+      }
+      const next = [...samples, detection.descriptor];
+      setSamples(next);
+      if (!samplePhoto) setSamplePhoto(capturePhoto(videoRef.current));
+      setCaptureHint(
+        next.length < 3
+          ? `Sample ${next.length} of 3 captured. Turn slightly and capture again.`
+          : "All 3 samples captured. Complete the employee details and save.",
+      );
+    } catch {
+      if (mountedRef.current)
+        setCaptureHint("Could not capture a sample. Please try again.");
+    } finally {
+      operationRef.current = false;
+      if (mountedRef.current) setBusy(false);
     }
-
-    const nextSamples = [...samples, detection.descriptor];
-    setSamples(nextSamples);
-    if (!samplePhoto) setSamplePhoto(capturePhoto(videoRef.current));
-    setCaptureHint(
-      nextSamples.length < 3
-        ? `Sample ${nextSamples.length} of 3 captured. Turn your head slightly and capture again.`
-        : "All 3 samples captured. Fill in the details and save.",
-    );
   };
-
   const save = async () => {
     const trimmedName = name.trim();
-    if (!trimmedName || samples.length !== 3) return;
+    if (!trimmedName || samples.length !== 3 || operationRef.current || saved)
+      return;
+    operationRef.current = true;
+    setBusy(true);
+    setError({ text: "", ok: false });
     const employee: Employee = {
       id: uid(),
       name: trimmedName,
@@ -92,21 +126,31 @@ export function useRegistration({
       createdAt: Date.now(),
     };
     try {
-      const saved = await faceGateStorage.employees.create(
+      const result = await faceGateStorage.employees.create(
         employee,
         samplePhoto ? dataUrlToBlob(samplePhoto) : undefined,
       );
-      setEmployees((current) => [...current, saved]);
-      setError({ text: `${trimmedName} registered successfully.`, ok: true });
-      setTimeout(close, 900);
-    } catch (saveError) {
-      console.error("Could not save employee", saveError);
-      setError({ text: "Could not save this person. Please try again.", ok: false });
+      onRegistered(result);
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+      if (mountedRef.current) {
+        setSaved(true);
+        setError({ text: `${trimmedName} registered successfully.`, ok: true });
+      }
+    } catch (failure) {
+      if (mountedRef.current)
+        setError({
+          text:
+            failure instanceof Error
+              ? failure.message
+              : "Could not register this employee.",
+          ok: false,
+        });
+    } finally {
+      operationRef.current = false;
+      if (mountedRef.current) setBusy(false);
     }
   };
-
   return {
-    registerOpen,
     videoRef,
     samples,
     captureHint,
@@ -117,14 +161,16 @@ export function useRegistration({
     department,
     setDepartment,
     error,
-    canSave: samples.length === 3 && name.trim().length > 0,
-    open,
-    close,
+    ready,
+    loading,
+    busy,
+    saved,
+    canSave: samples.length === 3 && !!name.trim() && !busy && !saved,
+    initialize,
     capture,
     save,
   };
 }
-
 function capturePhoto(video: HTMLVideoElement): string {
   const canvas = document.createElement("canvas");
   canvas.width = 160;

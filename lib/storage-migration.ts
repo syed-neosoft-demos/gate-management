@@ -1,6 +1,7 @@
-import { Employee, LogEntry, Settings } from "@/lib/types";
+import { Employee, LogEntry } from "@/lib/types";
 
-type Snapshot = { employees: Employee[]; logs: LogEntry[]; settings?: Settings };
+type LegacySettings = { orgName: string; pin?: string; timeZone?: string };
+type Snapshot = { employees: Employee[]; logs: LogEntry[]; settings?: LegacySettings };
 type StoredEmployee = Omit<Employee, "photo"> & { photo?: string };
 
 function result<T>(request: IDBRequest<T>): Promise<T> {
@@ -23,7 +24,7 @@ function photoDataUrl(blob: Blob): Promise<string> {
 export async function migrateBrowserStorage(save: (snapshot: Snapshot) => Promise<void>) {
   const employees = JSON.parse(localStorage.getItem("fg_employees") || "[]") as Employee[];
   const logs = JSON.parse(localStorage.getItem("fg_logs") || "[]") as LogEntry[];
-  let settings = JSON.parse(localStorage.getItem("fg_settings") || "null") as Settings | undefined;
+  let settings = JSON.parse(localStorage.getItem("fg_settings") || "null") as LegacySettings | undefined;
   let database: IDBDatabase | undefined;
   try {
     if (typeof indexedDB !== "undefined") {
@@ -43,7 +44,7 @@ export async function migrateBrowserStorage(save: (snapshot: Snapshot) => Promis
         const [rows, storedLogs, storedSettings, imageKeys, imageValues] = await Promise.all([
           stores.includes("employees") ? result<StoredEmployee[]>(tx.objectStore("employees").getAll()) : [],
           stores.includes("attendanceLogs") ? result<LogEntry[]>(tx.objectStore("attendanceLogs").getAll()) : [],
-          stores.includes("settings") ? result<Settings | undefined>(tx.objectStore("settings").get("app")) : undefined,
+          stores.includes("settings") ? result<LegacySettings | undefined>(tx.objectStore("settings").get("app")) : undefined,
           stores.includes("images") ? result(tx.objectStore("images").getAllKeys()) : [],
           stores.includes("images") ? result<Blob[]>(tx.objectStore("images").getAll()) : [],
         ]);

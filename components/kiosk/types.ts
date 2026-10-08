@@ -2,15 +2,13 @@ import { RefObject } from "react";
 import { Employee, LogEntry } from "@/lib/types";
 
 export type LastEvent = { entry: LogEntry; emp: Employee } | null;
-
-export interface KioskViewProps {
+export interface KioskScreenProps {
   loadingScreenVisible: boolean;
   loadingText: string;
   appVisible: boolean;
   orgName: string;
   clockTime: string;
   clockDate: string;
-  openPinGate: () => void;
   videoRef: RefObject<HTMLVideoElement>;
   overlayRef: RefObject<HTMLCanvasElement>;
   scanFrameRef: RefObject<HTMLDivElement>;
@@ -20,51 +18,10 @@ export interface KioskViewProps {
   statIn: number;
   statOut: number;
   statPeople: number;
-  openRegister: () => void;
   toast: {
     show: boolean;
     emp: Employee | null;
     type: "IN" | "OUT";
     ts: number;
   };
-  pinOpen: boolean;
-  pinBuffer: string;
-  pinError: string;
-  pressKey: (key: string) => void;
-  closePinGate: () => void;
-  registerOpen: boolean;
-  regVideoRef: RefObject<HTMLVideoElement>;
-  samples: Float32Array[];
-  captureHint: string;
-  captureSample: () => void;
-  regName: string;
-  setRegName: (value: string) => void;
-  regId: string;
-  setRegId: (value: string) => void;
-  regDept: string;
-  setRegDept: (value: string) => void;
-  regError: { text: string; ok: boolean };
-  canSave: boolean;
-  savePerson: () => void;
-  closeRegister: () => void;
-  adminOpen: boolean;
-  closeAdmin: () => void;
-  activeTab: "logs" | "people" | "settings";
-  setActiveTab: (tab: "logs" | "people" | "settings") => void;
-  logDate: string;
-  setLogDate: (value: string) => void;
-  showAllDates: () => void;
-  filteredLogs: LogEntry[];
-  employees: Employee[];
-  exportCsv: () => void;
-  sortedPeople: Employee[];
-  removePerson: (employee: Employee) => void;
-  openRegisterFromAdmin: () => void;
-  settingsOrgName: string;
-  setSettingsOrgName: (value: string) => void;
-  settingsNewPin: string;
-  setSettingsNewPin: (value: string) => void;
-  settingsMsg: { text: string; ok: boolean };
-  saveSettings: () => void;
-  resetAll: () => void;
 }

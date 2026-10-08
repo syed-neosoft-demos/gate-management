@@ -22,8 +22,8 @@ export type LogEntry = {
 };
 
 export type Settings = {
-  pin: string;
   orgName: string;
+  timeZone: string;
 };
 
 export const uid = () =>

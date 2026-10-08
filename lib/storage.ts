@@ -42,7 +42,10 @@ function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-async function request<T>(resource: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+  resource: string,
+  options: RequestInit = {},
+): Promise<T> {
   const response = await fetch(`/api/storage/${resource}`, {
     ...options,
     cache: "no-store",
@@ -55,16 +58,21 @@ async function request<T>(resource: string, options: RequestInit = {}): Promise<
 
 const images: ImageBucket = {
   async get(key) {
-    const value = await request<string | null>(`images?key=${encodeURIComponent(key)}`);
+    const value = await request<string | null>(
+      `images?key=${encodeURIComponent(key)}`,
+    );
     return value ? dataUrlToBlob(value) : undefined;
   },
   async put(key, image) {
     await request(`images?key=${encodeURIComponent(key)}`, {
-      method: "POST", body: JSON.stringify(await blobToDataUrl(image)),
+      method: "POST",
+      body: JSON.stringify(await blobToDataUrl(image)),
     });
   },
   async remove(key) {
-    await request(`images?key=${encodeURIComponent(key)}`, { method: "DELETE" });
+    await request(`images?key=${encodeURIComponent(key)}`, {
+      method: "DELETE",
+    });
   },
 };
 
@@ -73,18 +81,26 @@ const employees: EmployeeRepository = {
   async create(employee, image) {
     return request<Employee>("employees", {
       method: "POST",
-      body: JSON.stringify({ ...employee, photo: image ? await blobToDataUrl(image) : employee.photo }),
+      body: JSON.stringify({
+        ...employee,
+        photo: image ? await blobToDataUrl(image) : employee.photo,
+      }),
     });
   },
   async remove(id) {
-    await request(`employees?key=${encodeURIComponent(id)}`, { method: "DELETE" });
+    await request(`employees?key=${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
   },
 };
 
 const attendance: AttendanceRepository = {
   list: () => request<LogEntry[]>("attendance"),
   async add(entry) {
-    await request("attendance", { method: "POST", body: JSON.stringify(entry) });
+    await request("attendance", {
+      method: "POST",
+      body: JSON.stringify(entry),
+    });
   },
 };
 
@@ -96,21 +112,36 @@ const settings: SettingsRepository = {
 };
 
 let initialization: Promise<void> | undefined;
+let migration: Promise<void> | undefined;
 export const faceGateStorage = {
-  employees, attendance, settings, images,
+  employees,
+  attendance,
+  settings,
+  images,
   initialize(): Promise<void> {
     if (!initialization) {
       initialization = (async () => {
         await request("initialize");
-        await migrateBrowserStorage(async (snapshot) => {
-          await request("migrate", { method: "POST", body: JSON.stringify(snapshot) });
-        });
       })().catch((error) => {
         initialization = undefined;
         throw error;
       });
     }
     return initialization;
+  },
+  migrateLegacyData(): Promise<void> {
+    if (!migration) {
+      migration = migrateBrowserStorage(async (snapshot) => {
+        await request("migrate", {
+          method: "POST",
+          body: JSON.stringify(snapshot),
+        });
+      }).catch((error) => {
+        migration = undefined;
+        throw error;
+      });
+    }
+    return migration;
   },
   async clearPeopleAndAttendance() {
     await request("reset", { method: "DELETE" });

@@ -32,8 +32,10 @@ test("validates records and rejects malformed descriptors, images, PINs, and log
   assert.equal(validation.isEmployee({ ...employee, descriptor: [0.1] }), false);
   assert.equal(validation.isEmployee({ ...employee, descriptor: Array(128).fill(NaN) }), false);
   assert.equal(validation.isEmployee({ ...employee, photo: "https://example.com/photo.jpg" }), false);
-  assert.equal(validation.isSettings({ pin: "1234", orgName: "FaceGate" }), true);
-  assert.equal(validation.isSettings({ pin: "123", orgName: "FaceGate" }), false);
+  assert.equal(validation.isSettings({ orgName: "FaceGate", timeZone: "Asia/Kolkata" }), true);
+  assert.equal(validation.isSettings({ orgName: "FaceGate", timeZone: "Invalid/Zone" }), false);
+  assert.equal(validation.isLegacySettings({ pin: "1234", orgName: "FaceGate" }), true);
+  assert.equal(validation.isLegacySettings({ pin: "123", orgName: "FaceGate" }), false);
   assert.equal(validation.isLogEntry({ id: "log", empId: "1", name: "A", type: "IN", ts: 1 }), true);
   assert.equal(validation.isLogEntry({ id: "log", empId: "1", name: "A", type: "IN", ts: Infinity }), false);
 });

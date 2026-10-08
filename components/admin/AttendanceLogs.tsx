@@ -1,8 +1,11 @@
-import { fmtDate, fmtTime } from "@/lib/types";
-import { KioskViewProps } from "@/components/kiosk/types";
-import { badgeClass, EmployeeAvatar } from "@/components/kiosk/ui";
+"use client";
 
-export default function LogsTab(p: KioskViewProps) {
+import { fmtDate, fmtTime } from "@/lib/types";
+import { useAdminContext } from "@/components/admin/AdminProvider";
+import { badgeClass, EmployeeAvatar } from "@/components/shared/ui";
+
+export default function AttendanceLogs() {
+  const p = useAdminContext();
   return (
     <div>
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
@@ -51,13 +54,17 @@ export default function LogsTab(p: KioskViewProps) {
             </thead>
             <tbody>
               {p.filteredLogs.map((entry) => {
-                const employee = p.employees.find((item) => item.id === entry.empId);
+                const employee = p.employees.find(
+                  (item) => item.id === entry.empId,
+                );
                 return (
                   <tr key={entry.id}>
                     <td className="px-2.5 py-2.5 border-line border-b">
                       <EmployeeAvatar photo={employee?.photo} />
                     </td>
-                    <td className="px-2.5 py-2.5 border-line border-b">{entry.name}</td>
+                    <td className="px-2.5 py-2.5 border-line border-b">
+                      {entry.name}
+                    </td>
                     <td className="px-2.5 py-2.5 border-line border-b font-mono">
                       {entry.extId || "—"}
                     </td>
@@ -68,7 +75,9 @@ export default function LogsTab(p: KioskViewProps) {
                         {entry.type}
                       </span>
                     </td>
-                    <td className="px-2.5 py-2.5 border-line border-b">{fmtDate(entry.ts)}</td>
+                    <td className="px-2.5 py-2.5 border-line border-b">
+                      {fmtDate(entry.ts)}
+                    </td>
                     <td className="px-2.5 py-2.5 border-line border-b font-mono">
                       {fmtTime(entry.ts)}
                     </td>
